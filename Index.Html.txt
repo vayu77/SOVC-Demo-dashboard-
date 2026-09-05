@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOVC — Live Sales & Video Call Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg: #0D0F14;
+    --panel: #12151C;
+    --line: #23262F;
+    --ink: #E7E9EE;
+    --dim: #8A8F9C;
+    --dimmer: #565B68;
+    --signal: #39D98A;
+    --amber: #E8B339;
+    --coral: #E85D4F;
+    --wire: #3E7BFA;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Inter', sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.4;
+    min-height: 100vh;
+  }
+  .wrap{ max-width: 1400px; margin: 0 auto; padding: 28px 24px 64px; }
+
+  /* ---- Top bar ---- */
+  .topbar{
+    display:flex; align-items:flex-end; justify-content:space-between;
+    flex-wrap: wrap; gap: 16px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 28px;
+  }
+  .brand{ display:flex; flex-direction:column; gap:6px; }
+  .brand .eyebrow{
+    display:flex; align-items:center; gap:8px;
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em;
+    color: var(--dim);
+  }
+  .pulse{ width:7px; height:7px; border-radius:50%; background: var(--signal);
+    box-shadow: 0 0 0 0 rgba(57,217,138,0.6); animation: pulse 2s infinite; }
+  @keyframes pulse{
+    0%{ box-shadow: 0 0 0 0 rgba(57,217,138,0.55); }
+    70%{ box-shadow: 0 0 0 7px rgba(57,217,138,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(57,217,138,0); }
+  }
+  .brand h1{ font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+  .controls{ display:flex; align-items:center; gap: 14px; flex-wrap: wrap; }
+  .field{ display:flex; flex-direction:column; gap:4px; }
+  .field label{ font-size:11px; color:var(--dim); font-family: var(--mono); }
+  select, button.refresh{
+    background: var(--panel); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px 12px; font-family: var(--sans); font-size: 13px;
+  }
+  button.refresh{ cursor:pointer; display:flex; align-items:center; gap:8px; }
+  button.refresh:hover{ border-color: var(--wire); }
+  .updated{ font-family: var(--mono); font-size: 11px; color: var(--dimmer); }
+
+  /* ---- KPI row ---- */
+  .kpis{
+    display:grid; grid-template-columns: repeat(6, 1fr);
+    gap: 0; margin-bottom: 32px;
+    border-top: 1px solid var(--line);
+    border-left: 1px solid var(--line);
+  }
+  .kpi{
+    border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    padding: 16px 18px; display:flex; flex-direction:column; gap:8px;
+  }
+  .kpi .lbl{ font-size: 11px; color: var(--dim); font-family: var(--mono); letter-spacing: 0.02em; }
+  .kpi .val{ font-family: var(--mono); font-size: 30px; font-weight: 600; }
+  .kpi .val.good{ color: var(--signal); }
+  .kpi .val.warn{ color: var(--amber); }
+
+  /* ---- Section layout ---- */
+  .grid{ display:grid; grid-template-columns: 1.7fr 1fr; gap: 20px; align-items: start; }
+  .panel{
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 20px; margin-bottom: 20px;
+  }
+  .panel h2{ font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .panel .sub{ font-size: 12px; color: var(--dim); margin-bottom: 16px; }
+
+  table{ width:100%; border-collapse: collapse; font-size: 13px; }
+  th{
+    text-align:left; font-family: var(--mono); font-size: 10.5px; color: var(--dim);
+    font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--line);
+    letter-spacing: 0.02em;
+  }
+  th.num, td.num{ text-align: right; }
+  td{ padding: 9px 10px; border-bottom: 1px solid #1A1D26; }
+  tr:hover td{ background: #171A22; }
+  .rank{ font-family: var(--mono); color: var(--dimmer); width: 24px; }
+  .bar-cell{ display:flex; align-items:center; gap:8px; }
+  .mini-bar{ height:5px; border-radius: 3px; background: var(--wire); }
+  .conv-good{ color: var(--signal); }
+  .conv-mid{ color: var(--amber); }
+  .conv-low{ color: var(--coral); }
+
+  .chart-row{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+  .chart-box{ position:relative; height: 190px; }
+  .legend-row{ display:flex; justify-content:space-between; font-size: 12px; margin-top:10px; color: var(--dim); }
+
+  .cat-list{ display:flex; flex-direction:column; gap:10px; }
+  .cat-row{ display:grid; grid-template-columns: 110px 1fr 46px; align-items:center; gap:10px; font-size:12px; }
+  .cat-track{ height:6px; background:#1B1E27; border-radius:3px; overflow:hidden; }
+  .cat-fill{ height:100%; background: var(--wire); border-radius:3px; }
+
+  .empty{ color: var(--dimmer); font-size: 12px; font-family: var(--mono); padding: 20px 0; text-align:center; }
+  footer{ margin-top: 20px; text-align:center; color: var(--dimmer); font-size: 11px; font-family: var(--mono); }
+
+  @media (max-width: 980px){
+    .kpis{ grid-template-columns: repeat(2,1fr); }
+    .grid{ grid-template-columns: 1fr; }
+    .chart-row{ grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="eyebrow"><span class="pulse"></span> SOVC SALES OPS</div>
+      <h1>Sales & Video Call Board</h1>
+    </div>
+    <div class="controls">
+      <div class="field">
+        <label for="agentFilter">AGENT</label>
+        <select id="agentFilter"><option value="All">All agents</option></select>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="refresh" id="refreshBtn">↻ Refresh</button>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <span class="updated" id="updatedAt">not loaded yet</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="kpis" id="kpiRow"></div>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <h2>Agent Leaderboard</h2>
+        <div class="sub">Ranked by orders, then video calls completed</div>
+        <table>
+          <thead>
+            <tr><th></th><th>Agent</th><th class="num">Calls</th><th class="num">Completed</th><th class="num">Orders</th><th class="num">Conversion</th></tr>
+          </thead>
+          <tbody id="leaderboardBody"></tbody>
+        </table>
+        <div class="empty" id="lbEmpty" style="display:none;">No calls logged for this filter yet</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>Call & Order Status</h2>
+        <div class="sub">Today's funnel snapshot</div>
+        <div class="chart-row">
+          <div>
+            <div class="chart-box"><canvas id="demoChart"></canvas></div>
+            <div class="legend-row"><span>● Completed</span><span>● Pending</span></div>
+          </div>
+          <div>
+            <div class="chart-box"><canvas id="orderChart"></canvas></div>
+            <div class="legend-row"><span>● Sold</span><span>● Pending</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Category Performance</h2>
+        <div class="sub">Video calls by product category</div>
+        <div class="cat-list" id="catList"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Source: Google Sheet, published-to-web CSV · auto-refreshes every 5 minutes</footer>
+</div>
+
+<script>
+/* =====================================================================
+   CONFIG — the only thing you need to edit to point this at your data.
+   In Google Sheets: File → Share → Publish to web → select the
+   "2026 SEP" sheet → format CSV → Publish → copy the link here.
+   ===================================================================== */
+const CONFIG = {
+  CSV_URL: "PASTE_YOUR_PUBLISHED_CSV_LINK_HERE",
+  REFRESH_MS: 5 * 60 * 1000
+};
+
+// Demo fallback data (your 3 real sample rows) so the board renders
+// even before CONFIG.CSV_URL is set.
+const DEMO_ROWS = [
+  {Date:"9/2/2026", "Product category":"Cushion", "Product Name":"", AOV:"", "Customer No.":"9099016086", "Demo status":"Completed", "Order status":"Sold", "Agent Name":"Akanksha Sharma", department:"Footware"},
+  {Date:"9/4/2026", "Product category":"Footware", "Product Name":"", AOV:"", "Customer No.":"9586875094", "Demo status":"Completed", "Order status":"Sold", "Agent Name":"Akanksha Sharma", department:"Footware"},
+  {Date:"9/2/2026", "Product category":"Insoles", "Product Name":"", AOV:"", "Customer No.":"9833868103", "Demo status":"Completed", "Order status":"Sold", "Agent Name":"Akanksha Thakre", department:"Insoles"}
+];
+
+let allRows = [];
+let demoChartInst = null, orderChartInst = null;
+
+const $ = (id) => document.getElementById(id);
+const trim = (v) => (v || "").toString().trim();
+
+async function loadData(){
+  $("updatedAt").textContent = "loading…";
+  let rows = null;
+  if (CONFIG.CSV_URL && CONFIG.CSV_URL.startsWith("http")) {
+    try {
+      const res = await fetch(CONFIG.CSV_URL, { cache: "no-store" });
+      const text = await res.text();
+      const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+      rows = parsed.data;
+    } catch (e) {
+      console.warn("Live fetch failed, falling back to demo data:", e);
+    }
+  }
+  allRows = (rows && rows.length ? rows : DEMO_ROWS).map(r => {
+    const clean = {};
+    Object.keys(r).forEach(k => clean[trim(k)] = trim(r[k]));
+    return clean;
+  }).filter(r => r["Date"]); // drop blank rows
+
+  populateAgentFilter();
+  render();
+  $("updatedAt").textContent = "updated " + new Date().toLocaleTimeString();
+}
+
+function populateAgentFilter(){
+  const sel = $("agentFilter");
+  const current = sel.value || "All";
+  const agents = [...new Set(allRows.map(r => r["Agent Name"]).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="All">All agents</option>' +
+    agents.map(a => `<option value="${a}">${a}</option>`).join("");
+  sel.value = agents.includes(current) ? current : "All";
+}
+
+function render(){
+  const filter = $("agentFilter").value;
+  const rows = filter === "All" ? allRows : allRows.filter(r => r["Agent Name"] === filter);
+
+  const calls = rows.length;
+  const completed = rows.filter(r => r["Demo status"] === "Completed").length;
+  const pendingCalls = rows.filter(r => r["Demo status"] === "Pending").length;
+  const sold = rows.filter(r => r["Order status"] === "Sold").length;
+  const pendingOrders = rows.filter(r => r["Order status"] === "Pending").length;
+  const conv = completed ? (sold / completed) : 0;
+
+  renderKpis({calls, completed, pendingCalls, sold, pendingOrders, conv});
+  renderLeaderboard(filter === "All" ? allRows : rows, filter);
+  renderStatusCharts(rows);
+  renderCategories(rows);
+}
+
+function renderKpis(k){
+  const convClass = k.conv >= 0.3 ? "good" : (k.conv >= 0.15 ? "warn" : "");
+  const items = [
+    ["TOTAL CALLS", k.calls, ""],
+    ["COMPLETED", k.completed, ""],
+    ["CALLS PENDING", k.pendingCalls, k.pendingCalls > 0 ? "warn" : ""],
+    ["ORDERS SOLD", k.sold, "good"],
+    ["ORDERS PENDING", k.pendingOrders, k.pendingOrders > 0 ? "warn" : ""],
+    ["CONVERSION", (k.conv*100).toFixed(1) + "%", convClass],
+  ];
+  $("kpiRow").innerHTML = items.map(([lbl,val,cls]) =>
+    `<div class="kpi"><div class="lbl">${lbl}</div><div class="val ${cls}">${val}</div></div>`
+  ).join("");
+}
+
+function renderLeaderboard(scopeRows, filter){
+  const byAgent = {};
+  scopeRows.forEach(r => {
+    const a = r["Agent Name"];
+    if (!a) return;
+    byAgent[a] = byAgent[a] || {calls:0, completed:0, orders:0};
+    byAgent[a].calls++;
+    if (r["Demo status"] === "Completed") byAgent[a].completed++;
+    if (r["Order status"] === "Sold") byAgent[a].orders++;
+  });
+  let list = Object.entries(byAgent).map(([agent, v]) => ({
+    agent, ...v, conv: v.completed ? v.orders / v.completed : 0
+  }));
+  list.sort((a,b) => b.orders - a.orders || b.calls - a.calls);
+  const maxCalls = Math.max(1, ...list.map(x => x.calls));
+
+  $("lbEmpty").style.display = list.length ? "none" : "block";
+  $("leaderboardBody").innerHTML = list.map((r,i) => {
+    const convClass = r.conv >= 0.3 ? "conv-good" : (r.conv >= 0.15 ? "conv-mid" : "conv-low");
+    return `<tr>
+      <td class="rank">${i+1}</td>
+      <td>
+        <div class="bar-cell">
+          <span>${r.agent}</span>
+        </div>
+        <div class="mini-bar" style="width:${(r.calls/maxCalls*100).toFixed(0)}%"></div>
+      </td>
+      <td class="num">${r.calls}</td>
+      <td class="num">${r.completed}</td>
+      <td class="num">${r.orders}</td>
+      <td class="num ${convClass}">${(r.conv*100).toFixed(0)}%</td>
+    </tr>`;
+  }).join("");
+}
+
+function renderStatusCharts(rows){
+  const demoCompleted = rows.filter(r => r["Demo status"] === "Completed").length;
+  const demoPending = rows.filter(r => r["Demo status"] === "Pending").length;
+  const sold = rows.filter(r => r["Order status"] === "Sold").length;
+  const pend = rows.filter(r => r["Order status"] === "Pending").length;
+
+  const opts = {
+    plugins: { legend: { display:false }, tooltip:{ enabled:true } },
+    cutout: "68%",
+    responsive: true,
+    maintainAspectRatio: false
+  };
+
+  if (demoChartInst) demoChartInst.destroy();
+  demoChartInst = new Chart($("demoChart"), {
+    type: "doughnut",
+    data: { labels:["Completed","Pending"], datasets:[{ data:[demoCompleted, demoPending || 0.0001],
+      backgroundColor:["#39D98A","#23262F"], borderWidth:0 }] },
+    options: opts
+  });
+
+  if (orderChartInst) orderChartInst.destroy();
+  orderChartInst = new Chart($("orderChart"), {
+    type: "doughnut",
+    data: { labels:["Sold","Pending"], datasets:[{ data:[sold, pend || 0.0001],
+      backgroundColor:["#3E7BFA","#23262F"], borderWidth:0 }] },
+    options: opts
+  });
+}
+
+function renderCategories(rows){
+  const byCat = {};
+  rows.forEach(r => {
+    const c = r["Product category"];
+    if (!c) return;
+    byCat[c] = (byCat[c] || 0) + 1;
+  });
+  const entries = Object.entries(byCat).sort((a,b) => b[1]-a[1]);
+  const max = Math.max(1, ...entries.map(e => e[1]));
+  $("catList").innerHTML = entries.length ? entries.map(([cat,n]) => `
+    <div class="cat-row">
+      <span>${cat}</span>
+      <div class="cat-track"><div class="cat-fill" style="width:${(n/max*100).toFixed(0)}%"></div></div>
+      <span style="text-align:right; font-family:var(--mono); color:var(--dim)">${n}</span>
+    </div>`).join("") : '<div class="empty">No category data yet</div>';
+}
+
+$("agentFilter").addEventListener("change", render);
+$("refreshBtn").addEventListener("click", loadData);
+
+loadData();
+setInterval(loadData, CONFIG.REFRESH_MS);
+</script>
+</body>
+</html>
